@@ -81,6 +81,7 @@ fun HomeScreen(
     onImportFiles: (List<Uri>) -> Unit,
     onCopyDirectUrl: (label: String, url: String) -> Unit,
     onNavigateToGate: () -> Unit,
+    onNavigateToZeroScope: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isAr = currentLocale == "ar"
@@ -325,7 +326,8 @@ fun HomeScreen(
                 },
                 onCopyDirectUrl = { label, url ->
                     onCopyDirectUrl(label, url)
-                }
+                },
+                onNavigateToZeroScope = onNavigateToZeroScope
             )
         }
 
@@ -342,7 +344,8 @@ private fun ModelResearchCard(
     isAr: Boolean,
     context: Context,
     onToggleExpand: () -> Unit,
-    onCopyDirectUrl: (String, String) -> Unit
+    onCopyDirectUrl: (String, String) -> Unit,
+    onNavigateToZeroScope: () -> Unit
 ) {
     LuxuryCard(
         modifier = Modifier
@@ -657,6 +660,33 @@ private fun ModelResearchCard(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
+                }
+            }
+
+            if (modelSpec.id == "zeroscope-v2") {
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = onNavigateToZeroScope,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PureWhite,
+                        contentColor = OnyxBackground
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Layers,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isAr) "استيراد وتفعيل ZeroScope v2 (المكونات الثلاثة)" else "Import & Activate ZeroScope v2 (3 Components)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }

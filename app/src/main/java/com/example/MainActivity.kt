@@ -56,6 +56,7 @@ import com.example.ui.screens.CreateScreen
 import com.example.ui.screens.HardwareScreen
 import com.example.ui.screens.ModelSetupGateScreen
 import com.example.ui.screens.ModelsScreen
+import com.example.ui.screens.ZeroScopeScreen
 import com.example.ui.screens.VideoLibraryScreen
 import com.example.ui.screens.VideoPlayerDialog
 import com.example.ui.theme.CharcoalSurface
@@ -71,6 +72,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 enum class ScreenTab {
+    ZEROSCOPE,
     HOME,
     GATE,
     CREATE,
@@ -94,12 +96,13 @@ class MainActivity : ComponentActivity() {
                 val videos by viewModel.videosList.collectAsStateWithLifecycle()
                 val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
                 val importReport by viewModel.importReport.collectAsStateWithLifecycle()
+                val zeroScopeState by viewModel.zeroScopeState.collectAsStateWithLifecycle()
 
                 val snackbarHostState = remember { SnackbarHostState() }
                 val scope = rememberCoroutineScope()
                 
-                // On launch, directly open HOME screen
-                var currentTab by remember { mutableStateOf(ScreenTab.HOME) }
+                // On launch, directly open ZeroScope v2 screen per requirement
+                var currentTab by remember { mutableStateOf(ScreenTab.ZEROSCOPE) }
                 var activePlayingVideo by remember { mutableStateOf<GeneratedVideoEntity?>(null) }
 
                 LaunchedEffect(Unit) {
@@ -116,11 +119,11 @@ class MainActivity : ComponentActivity() {
                     LayoutDirection.Ltr
                 }
 
-                BackHandler(enabled = currentTab != ScreenTab.HOME || activePlayingVideo != null) {
+                BackHandler(enabled = currentTab != ScreenTab.ZEROSCOPE || activePlayingVideo != null) {
                     if (activePlayingVideo != null) {
                         activePlayingVideo = null
                     } else {
-                        currentTab = ScreenTab.HOME
+                        currentTab = ScreenTab.ZEROSCOPE
                     }
                 }
 
@@ -146,6 +149,33 @@ class MainActivity : ComponentActivity() {
                                 contentColor = PlatinumText
                             ) {
                                 NavigationBarItem(
+                                    selected = currentTab == ScreenTab.ZEROSCOPE,
+                                    onClick = { currentTab = ScreenTab.ZEROSCOPE },
+                                    icon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Layers,
+                                            contentDescription = "ZeroScope",
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    label = {
+                                        Text(
+                                            text = "ZeroScope",
+                                            fontSize = 11.sp,
+                                            fontWeight = if (currentTab == ScreenTab.ZEROSCOPE) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = OnyxBackground,
+                                        selectedTextColor = PureWhite,
+                                        indicatorColor = PureWhite,
+                                        unselectedIconColor = SilverMutedText,
+                                        unselectedTextColor = DarkMutedText
+                                    ),
+                                    modifier = Modifier.testTag("nav_tab_zeroscope")
+                                )
+
+                                NavigationBarItem(
                                     selected = currentTab == ScreenTab.HOME,
                                     onClick = { currentTab = ScreenTab.HOME },
                                     icon = {
@@ -157,7 +187,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     label = {
                                         Text(
-                                            text = if (uiState.currentLocale == "ar") "الرئيسية" else "Home",
+                                            text = if (uiState.currentLocale == "ar") "النماذج" else "Models",
                                             fontSize = 11.sp,
                                             fontWeight = if (currentTab == ScreenTab.HOME) FontWeight.Bold else FontWeight.Normal
                                         )
@@ -289,6 +319,18 @@ class MainActivity : ComponentActivity() {
                                 .padding(innerPadding)
                         ) {
                             when (currentTab) {
+                                ScreenTab.ZEROSCOPE -> {
+                                    ZeroScopeScreen(
+                                        state = zeroScopeState,
+                                        currentLocale = uiState.currentLocale,
+                                        onSelectSlotFile = { slotId, uri -> viewModel.selectZeroScopeSlot(slotId, uri) },
+                                        onRemoveSlotFile = { slotId -> viewModel.removeZeroScopeSlot(slotId) },
+                                        onActivateZeroScope = { viewModel.activateZeroScope() },
+                                        onDismissActivationResult = { viewModel.dismissZeroScopeActivation() },
+                                        onNavigateToHome = { currentTab = ScreenTab.HOME },
+                                        onNavigateToHardware = { currentTab = ScreenTab.HARDWARE }
+                                    )
+                                }
                                 ScreenTab.HOME -> {
                                     HomeScreen(
                                         installedModel = uiState.selectedModel,
@@ -296,7 +338,8 @@ class MainActivity : ComponentActivity() {
                                         currentLocale = uiState.currentLocale,
                                         onImportFiles = { uris -> viewModel.inspectImportUris(uris) },
                                         onCopyDirectUrl = { label, url -> viewModel.copyTextToClipboard(label, url) },
-                                        onNavigateToGate = { currentTab = ScreenTab.GATE }
+                                        onNavigateToGate = { currentTab = ScreenTab.GATE },
+                                        onNavigateToZeroScope = { currentTab = ScreenTab.ZEROSCOPE }
                                     )
                                 }
                                 ScreenTab.GATE -> {

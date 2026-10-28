@@ -50,7 +50,10 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
     private val modelRepo = ModelRepository(application)
     private val videoRepo = VideoRepository(application)
     private val downloadManager = ModelDownloadManager(application)
+    val zeroScopeManager = com.example.data.ZeroScopeModelManager(application)
     val inferenceEngine: LocalInferenceEngine = DefaultLocalInferenceEngine()
+
+    val zeroScopeState: StateFlow<com.example.data.ZeroScopeScreenState> = zeroScopeManager.state
 
     val compatibilityReport: StateFlow<CompatibilityReport> = MutableStateFlow(
         DeviceCompatibilityManager.checkCompatibility(application)
@@ -341,6 +344,29 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
                 _eventFlow.emit("Export failed: ${result.exceptionOrNull()?.message}")
             }
         }
+    }
+
+    fun selectZeroScopeSlot(slotId: com.example.data.ZeroScopeSlotId, uri: Uri) {
+        viewModelScope.launch {
+            zeroScopeManager.selectAndVerifySlot(slotId, uri)
+        }
+    }
+
+    fun removeZeroScopeSlot(slotId: com.example.data.ZeroScopeSlotId) {
+        zeroScopeManager.removeSlot(slotId)
+    }
+
+    fun activateZeroScope() {
+        val result = zeroScopeManager.activateZeroScope()
+        if (result.isActivated) {
+            viewModelScope.launch {
+                _eventFlow.emit("تم تفعيل ZeroScope v2 بنجاح")
+            }
+        }
+    }
+
+    fun dismissZeroScopeActivation() {
+        zeroScopeManager.dismissActivationResult()
     }
 
     fun getShareIntent(video: GeneratedVideoEntity) = videoRepo.createShareIntent(video)

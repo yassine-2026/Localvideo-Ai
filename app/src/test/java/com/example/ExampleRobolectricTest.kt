@@ -122,4 +122,22 @@ class ExampleRobolectricTest {
         assertTrue("Invalid URL must return failure result", result.isFailure)
         assertNotNull(downloadManager.downloadState.value.errorMessage)
     }
+
+    @Test
+    fun testZeroScopeModelManager_initialStateAndHonestActivation() {
+        val manager = com.example.data.ZeroScopeModelManager(context)
+        val state = manager.state.value
+
+        assertEquals("UNet — diffusion_pytorch_model.safetensors", state.unetSlot.title)
+        assertEquals("Text Encoder — model.safetensors", state.textEncoderSlot.title)
+        assertEquals("VAE — diffusion_pytorch_model.safetensors", state.vaeSlot.title)
+
+        assertEquals(com.example.data.ZeroScopeModelManager.ESTIMATED_TOTAL_BYTES, state.estimatedTotalSizeBytes)
+        assertEquals(com.example.data.ZeroScopeModelManager.STRICT_LIMIT_BYTES, state.maxPermittedBytes)
+
+        // Activation attempt before files are selected must be rejected
+        val activationResult = manager.activateZeroScope()
+        assertFalse("Activation must fail when slots are empty", activationResult.isActivated)
+        assertTrue(activationResult.messageAr.contains("المكونات الثلاثة"))
+    }
 }

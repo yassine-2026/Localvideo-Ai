@@ -126,4 +126,94 @@ class ExampleUnitTest {
             assertTrue("Model ${model.name} must have direct download URL", !model.directDownloadUrl.isNullOrBlank())
         }
     }
+
+    @Test
+    fun testSafeTensorsHeaderParser_classifiesUnetCorrectly() {
+        val json = """{"down_blocks.0.attentions.0.weight": {"dtype": "F16", "shape": [320, 320]}, "time_embed.0.weight": {"dtype": "F16", "shape": [320, 1280]}}"""
+        val bytes = createSyntheticSafeTensorsBytes(json)
+        val stream = java.io.ByteArrayInputStream(bytes)
+
+        val result = com.example.engine.SafeTensorsHeaderParser.parseHeader(
+            stream,
+            com.example.engine.SafeTensorsRole.UNET
+        )
+
+        assertTrue("UNet header must be valid", result.isValid)
+        assertEquals(com.example.engine.SafeTensorsRole.UNET, result.detectedRole)
+        assertEquals(2, result.tensorCount)
+    }
+
+    @Test
+    fun testSafeTensorsHeaderParser_classifiesTextEncoderCorrectly() {
+        val json = """{"text_model.embeddings.token_embedding.weight": {"dtype": "F16", "shape": [49408, 1024]}, "text_model.encoder.layers.0.self_attn.weight": {"dtype": "F16", "shape": [1024, 1024]}}"""
+        val bytes = createSyntheticSafeTensorsBytes(json)
+        val stream = java.io.ByteArrayInputStream(bytes)
+
+        val result = com.example.engine.SafeTensorsHeaderParser.parseHeader(
+            stream,
+            com.example.engine.SafeTensorsRole.TEXT_ENCODER
+        )
+
+        assertTrue("Text encoder header must be valid", result.isValid)
+        assertEquals(com.example.engine.SafeTensorsRole.TEXT_ENCODER, result.detectedRole)
+        assertEquals(2, result.tensorCount)
+    }
+
+    @Test
+    fun testSafeTensorsHeaderParser_classifiesVaeCorrectly() {
+        val json = """{"post_quant_conv.weight": {"dtype": "F16", "shape": [4, 4, 1, 1]}, "decoder.conv_in.weight": {"dtype": "F16", "shape": [512, 4, 3, 3]}}"""
+        val bytes = createSyntheticSafeTensorsBytes(json)
+        val stream = java.io.ByteArrayInputStream(bytes)
+
+        val result = com.example.engine.SafeTensorsHeaderParser.parseHeader(
+            stream,
+            com.example.engine.SafeTensorsRole.VAE
+        )
+
+        assertTrue("VAE header must be valid", result.isValid)
+        assertEquals(com.example.engine.SafeTensorsRole.VAE, result.detectedRole)
+        assertEquals(2, result.tensorCount)
+    }
+
+    @Test
+    fun testSafeTensorsHeaderParser_detectsComponentMismatch() {
+        // Provide VAE keys when UNet is expected
+        val json = """{"post_quant_conv.weight": {"dtype": "F16", "shape": [4, 4]}, "decoder.conv_in.weight": {"dtype": "F16", "shape": [512, 4]}}"""
+        val bytes = createSyntheticSafeTensorsBytes(json)
+        val stream = java.io.ByteArrayInputStream(bytes)
+
+        val result = com.example.engine.SafeTensorsHeaderParser.parseHeader(
+            stream,
+            com.example.engine.SafeTensorsRole.UNET
+        )
+
+        assertFalse("Must reject VAE weights in UNet slot", result.isValid)
+        assertEquals(com.example.engine.SafeTensorsRole.VAE, result.detectedRole)
+        assertTrue(result.failureReasonAr?.contains("VAE") == true)
+    }
+
+    @Test
+    fun testSafeTensorsHeaderParser_rejectsHtmlFile() {
+        val htmlContent = "<!DOCTYPE html><html><body>404 Not Found from Hugging Face</body></html>".toByteArray()
+        val stream = java.io.ByteArrayInputStream(htmlContent)
+
+        val result = com.example.engine.SafeTensorsHeaderParser.parseHeader(
+            stream,
+            com.example.engine.SafeTensorsRole.UNET
+        )
+
+        assertFalse("Must reject HTML file as SafeTensors", result.isValid)
+        assertTrue(result.failureReasonAr?.contains("HTML") == true)
+    }
+
+    private fun createSyntheticSafeTensorsBytes(json: String): ByteArray {
+        val jsonBytes = json.toByteArray(Charsets.UTF_8)
+        val headerLen = jsonBytes.size.toLong()
+
+        val buf = java.nio.ByteBuffer.allocate(8 + jsonBytes.size)
+            .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        buf.putLong(headerLen)
+        buf.put(jsonBytes)
+        return buf.array()
+    }
 }
