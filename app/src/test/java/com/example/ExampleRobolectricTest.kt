@@ -5,11 +5,17 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.db.AppDatabase
 import com.example.data.db.GeneratedVideoEntity
+import com.example.download.ModelDownloadManager
+import com.example.engine.DefaultLocalInferenceEngine
+import com.example.engine.InferenceConfig
+import com.example.engine.InferenceState
 import com.example.hardware.DeviceCompatibilityManager
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -59,8 +65,8 @@ class ExampleRobolectricTest {
         val video = GeneratedVideoEntity(
             title = "Cinematic Waves",
             prompt = "Dramatic cinematic waves crashing against black basalt cliffs",
-            modelName = "MicroVideo-T2V",
-            modelVersion = "v0.9.4",
+            modelName = "Wan 2.1",
+            modelVersion = "v2.1",
             resolution = "256x256",
             durationSeconds = 2.0,
             fps = 12,
@@ -80,5 +86,40 @@ class ExampleRobolectricTest {
 
         val allVideos = dao.getAllVideosFlow().first()
         assertEquals(1, allVideos.size)
+
+        // Delete video
+        dao.deleteVideoById(id)
+        val afterDelete = dao.getVideoById(id)
+        assertEquals(null, afterDelete)
+    }
+
+    @Test
+    fun testLocalInferenceEngine_preventsExecutionWithoutModel() = runBlocking {
+        val engine = DefaultLocalInferenceEngine()
+        assertFalse("Engine must not be ready before loading verified model", engine.isModelReady())
+
+        val states = engine.executeInference(
+            context = context,
+            config = InferenceConfig(prompt = "Dramatic cinematic sunset")
+        ).toList()
+
+        assertTrue(states.isNotEmpty())
+        val firstState = states.first()
+        assertTrue("Must emit Error state when model is not initialized", firstState is InferenceState.Error)
+    }
+
+    @Test
+    fun testModelDownloadManager_handlesInvalidUrl() = runBlocking {
+        val downloadManager = ModelDownloadManager(context)
+        val result = downloadManager.startDownload(
+            modelId = "invalid_test",
+            urlString = "https://invalid.domain.example/non_existent.bin",
+            fileName = "invalid.bin",
+            expectedSizeBytes = 1000L,
+            expectedSha256 = ""
+        )
+
+        assertTrue("Invalid URL must return failure result", result.isFailure)
+        assertNotNull(downloadManager.downloadState.value.errorMessage)
     }
 }

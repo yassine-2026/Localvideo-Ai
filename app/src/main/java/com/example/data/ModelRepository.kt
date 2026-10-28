@@ -18,23 +18,6 @@ class ModelRepository(private val context: Context) {
     suspend fun initializeCatalogIfEmpty() = withContext(Dispatchers.IO) {
         val initialList = listOf(
             ModelInfoEntity(
-                id = "microvideo-quantized",
-                name = "MicroVideo-T2V (Quantized)",
-                version = "v0.9.8 Mobile INT8",
-                provider = "OpenVideo Research Collective",
-                license = "Apache 2.0",
-                downloadUrl = "https://raw.githubusercontent.com/datasets/registry/main/model-weights.bin",
-                sizeBytes = 1_480_000_000L,
-                sizeFormatted = "1.38 GB",
-                minRamGb = 4.5,
-                architecture = "Mobile Diffusion Transformer (DiT)",
-                expectedSha256 = "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-                status = "NOT_DOWNLOADED",
-                localFilePath = null,
-                downloadedBytes = 0L,
-                verificationNotes = "Requires download & on-device verification before initialization. Fits strictly within 1.5 GB limit."
-            ),
-            ModelInfoEntity(
                 id = "wan-2.1-1.3b",
                 name = "Wan 2.1 (1.3B)",
                 version = "v2.1",
@@ -47,7 +30,7 @@ class ModelRepository(private val context: Context) {
                 architecture = "Spatiotemporal Flow Transformer",
                 expectedSha256 = "",
                 status = "EXCEEDS_LIMIT",
-                verificationNotes = "Exceeds 1.5 GB limit. Smallest modern DiT backbone, but required text encoder and VAE exceed phone storage/RAM."
+                verificationNotes = "أصغر نموذج DiT حقيقي متاح عالمياً. يتجاوز حد 1.5 GB ويتطلب 10 GB RAM."
             ),
             ModelInfoEntity(
                 id = "ltx-video-2b",
@@ -62,7 +45,7 @@ class ModelRepository(private val context: Context) {
                 architecture = "Diffusion Transformer (DiT)",
                 expectedSha256 = "",
                 status = "EXCEEDS_LIMIT",
-                verificationNotes = "Strictly exceeds the 1.5 GB ceiling. Requires desktop GPU with 12GB+ VRAM."
+                verificationNotes = "يتطلب بطاقة معالجة مكتبية بذاكرة 12 GB. يتجاوز حد الذاكرة المسموح به للهاتف."
             ),
             ModelInfoEntity(
                 id = "cogvideox-2b",
@@ -77,7 +60,7 @@ class ModelRepository(private val context: Context) {
                 architecture = "3D VAE + Expert DiT",
                 expectedSha256 = "",
                 status = "EXCEEDS_LIMIT",
-                verificationNotes = "Exceeds 1.5 GB limit. Unviable on consumer phones without remote workstation offloading."
+                verificationNotes = "يتجاوز حد 1.5 GB. لا يمكن تشغيله على الهواتف دون تسريع سحابي."
             ),
             ModelInfoEntity(
                 id = "zeroscope-v2",
@@ -92,9 +75,18 @@ class ModelRepository(private val context: Context) {
                 architecture = "Temporal UNet + CLIP",
                 expectedSha256 = "",
                 status = "EXCEEDS_LIMIT",
-                verificationNotes = "Exceeds 1.5 GB limitation. Cannot fit into mobile memory budget."
+                verificationNotes = "يتجاوز حد 1.5 GB ولا يمكن تحميله في ذاكرة الهاتف."
             )
         )
+
+        // Clear any old fake models (e.g. microvideo-quantized or microvideo-proto)
+        val oldFakeIds = listOf("microvideo-quantized", "microvideo-proto")
+        for (fakeId in oldFakeIds) {
+            val fake = modelDao.getModelById(fakeId)
+            if (fake != null) {
+                modelDao.deleteModel(fake)
+            }
+        }
 
         for (model in initialList) {
             val existing = modelDao.getModelById(model.id)
@@ -118,11 +110,11 @@ class ModelRepository(private val context: Context) {
         sha256: String
     ): Result<ModelInfoEntity> = withContext(Dispatchers.IO) {
         val sizeBytes = file.length()
-        val maxAllowedBytes = 1_610_612_736L // 1.5 GiB
+        val maxAllowedBytes = 1_610_612_736L // 1.5 GiB strict ceiling
 
         if (sizeBytes > maxAllowedBytes) {
             return@withContext Result.failure(
-                IllegalArgumentException("Imported weights (${sizeBytes / (1024 * 1024)} MB) strictly exceed the 1.5 GB limit.")
+                IllegalArgumentException("الملف المختار (${sizeBytes / (1024 * 1024)} MB) يتجاوز الحد الصارم 1.5 GB (1536 MB).")
             )
         }
 
@@ -142,7 +134,7 @@ class ModelRepository(private val context: Context) {
             status = "READY",
             localFilePath = file.absolutePath,
             downloadedBytes = sizeBytes,
-            verificationNotes = "Custom imported model within 1.5 GB limit. Verified on-device.",
+            verificationNotes = "تم استيراد النموذج وفحصه محلياً ضمن سقف 1.5 GB.",
             isCustomImported = true
         )
 

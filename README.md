@@ -81,7 +81,9 @@ com.example
 ### Unit & Robolectric Tests (`testDebugUnitTest`):
 - `testPromptEnricher_appendsCinematicAttributes`: Verifies local prompt expansion logic.
 - `testModelSizeLimit_strictlyEnforcesOnePointFiveGb`: Confirms strict rejection of models exceeding 1.5 GB.
-- `testSha256Verifier_matchesKnownHash`: Verifies cryptographic SHA-256 digest computation against test files.
-- `testAppNameString`: Asserts app branding consistency ("LocalVideo AI").
-- `testDeviceCompatibilityCheck`: Exercises hardware telemetry detection via Android context.
-- `testRoomDatabase_insertAndRetrieveVideo`: Validates CRUD operations for generated video metadata.
+- `testSha256Verifier_matchesKnownHashAndDetectsMismatch`: Verifies cryptographic SHA-256 digest computation against test files and detects corruption.
+- `testLocalInferenceEngine_detectsFormatsAndRejectsHtmlFiles`: Ensures HTML error pages (e.g., 404 or web viewer HTML) are detected and rejected as model weights.
+- `testLocalInferenceEngine_preventsExecutionWithoutModel`: Asserts that inference is strictly gated and emits Error state when no authentic model is loaded (no fake frames).
+- `testModelDownloadManager_handlesInvalidUrl`: Verifies graceful failure and descriptive error messaging for unreachable or invalid URLs.
+- `testVideoEncoderManager_validatesMissingOrInvalidMp4`: Verifies that MP4 validation rejects invalid or corrupt outputs.
+- `testRoomDatabase_insertAndRetrieveVideo`: Validates CRUD and delete operations for generated video metadata.

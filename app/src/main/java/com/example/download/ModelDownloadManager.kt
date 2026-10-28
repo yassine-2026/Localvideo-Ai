@@ -1,13 +1,13 @@
 package com.example.download
 
 import android.content.Context
+import android.os.StatFs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
@@ -44,6 +44,19 @@ class ModelDownloadManager(private val context: Context) {
         return dir
     }
 
+    /**
+     * Checks if there is sufficient disk space for the expected download plus 200MB buffer.
+     */
+    fun checkStorageAvailable(requiredBytes: Long): Boolean {
+        return try {
+            val stat = StatFs(getModelsDir().absolutePath)
+            val availableBytes = stat.availableBlocksLong * stat.blockSizeLong
+            availableBytes >= (requiredBytes + 200 * 1024 * 1024L)
+        } catch (_: Exception) {
+            true
+        }
+    }
+
     suspend fun startDownload(
         modelId: String,
         urlString: String,
@@ -53,6 +66,19 @@ class ModelDownloadManager(private val context: Context) {
     ): Result<File> = withContext(Dispatchers.IO) {
         isCancelled = false
         isPausedRequested = false
+
+        if (urlString.isBlank() || !urlString.startsWith("http")) {
+            val errorMsg = "Invalid or empty model download URL."
+            _downloadState.value = DownloadProgress(modelId = modelId, errorMessage = errorMsg)
+            return@withContext Result.failure(IllegalArgumentException(errorMsg))
+        }
+
+        // Check storage before starting
+        if (expectedSizeBytes > 0 && !checkStorageAvailable(expectedSizeBytes)) {
+            val errorMsg = "Insufficient storage space on device for this model (${expectedSizeBytes / (1024 * 1024)} MB required)."
+            _downloadState.value = DownloadProgress(modelId = modelId, errorMessage = errorMsg)
+            return@withContext Result.failure(IllegalStateException(errorMsg))
+        }
 
         val targetFile = File(getModelsDir(), fileName)
         val partFile = File(getModelsDir(), "$fileName.part")
@@ -72,6 +98,7 @@ class ModelDownloadManager(private val context: Context) {
             connection.connectTimeout = 15000
             connection.readTimeout = 30000
             connection.instanceFollowRedirects = true
+            connection.setRequestProperty("User-Agent", "LocalVideoAI-Android/1.0")
 
             if (existingBytes > 0) {
                 connection.setRequestProperty("Range", "bytes=$existingBytes-")
@@ -80,13 +107,38 @@ class ModelDownloadManager(private val context: Context) {
             connection.connect()
             val responseCode = connection.responseCode
 
+            // Handle HTTP errors cleanly
+            if (responseCode == HttpURLConnection.HTTP_NOT_FOUND) {
+                _downloadState.value = DownloadProgress(modelId = modelId, errorMessage = "HTTP Error 404: The model weights file was not found on remote server.")
+                return@withContext Result.failure(Exception("HTTP Error 404: Remote file not found at $urlString"))
+            }
+
+            if (responseCode == HttpURLConnection.HTTP_FORBIDDEN || responseCode == HttpURLConnection.HTTP_UNAUTHORIZED) {
+                _downloadState.value = DownloadProgress(modelId = modelId, errorMessage = "HTTP Error $responseCode: Access denied. Repository may require authentication or license agreement.")
+                return@withContext Result.failure(Exception("HTTP Error $responseCode: Access forbidden for $urlString"))
+            }
+
+            if (responseCode !in 200..299) {
+                _downloadState.value = DownloadProgress(modelId = modelId, errorMessage = "HTTP Error $responseCode: ${connection.responseMessage}")
+                return@withContext Result.failure(Exception("HTTP Error: $responseCode ${connection.responseMessage}"))
+            }
+
+            // Verify Content-Type: Reject HTML error/login pages masquerading as weights
+            val contentType = connection.contentType ?: ""
+            if (contentType.contains("text/html", ignoreCase = true) || contentType.contains("application/xhtml", ignoreCase = true)) {
+                _downloadState.value = DownloadProgress(
+                    modelId = modelId,
+                    errorMessage = "Server returned an HTML webpage instead of binary model weights (URL may be a repository viewer rather than direct raw download)."
+                )
+                return@withContext Result.failure(IllegalStateException("Server returned HTML page instead of binary weights."))
+            }
+
+            // Handle Range support: If server returned 200 OK instead of 206 Partial Content, reset stream to 0
             val totalLength = if (responseCode == HttpURLConnection.HTTP_PARTIAL) {
                 existingBytes + connection.contentLengthLong
-            } else if (responseCode == HttpURLConnection.HTTP_OK) {
-                existingBytes = 0L
-                connection.contentLengthLong
             } else {
-                return@withContext Result.failure(Exception("HTTP Error: $responseCode ${connection.responseMessage}"))
+                existingBytes = 0L // Server ignored Range header, restart download from beginning
+                connection.contentLengthLong
             }
 
             val finalTotalBytes = if (totalLength > 0) totalLength else expectedSizeBytes
@@ -94,9 +146,12 @@ class ModelDownloadManager(private val context: Context) {
 
             val inputStream: InputStream = connection.inputStream
             val output = RandomAccessFile(partFile, "rw")
+            if (existingBytes == 0L) {
+                output.setLength(0) // Truncate file if restarting from beginning
+            }
             output.seek(existingBytes)
 
-            val buffer = ByteArray(64 * 1024) // 64KB buffer
+            val buffer = ByteArray(64 * 1024)
             var bytesRead: Int
             var lastTime = System.currentTimeMillis()
             var bytesSinceLastTime = 0L
@@ -108,7 +163,7 @@ class ModelDownloadManager(private val context: Context) {
                     connection.disconnect()
                     partFile.delete()
                     _downloadState.value = DownloadProgress()
-                    return@withContext Result.failure(Exception("Download cancelled by user"))
+                    return@withContext Result.failure(Exception("Download cancelled by user."))
                 }
 
                 if (isPausedRequested) {
@@ -119,7 +174,7 @@ class ModelDownloadManager(private val context: Context) {
                         isDownloading = false,
                         isPaused = true
                     )
-                    return@withContext Result.failure(Exception("Download paused"))
+                    return@withContext Result.failure(Exception("Download paused."))
                 }
 
                 output.write(buffer, 0, bytesRead)
@@ -128,7 +183,7 @@ class ModelDownloadManager(private val context: Context) {
 
                 val currentTime = System.currentTimeMillis()
                 val elapsed = currentTime - lastTime
-                if (elapsed >= 500) { // Update stats every 500ms
+                if (elapsed >= 500) {
                     val speed = (bytesSinceLastTime / 1024.0) / (elapsed / 1000.0)
                     val remainingBytes = (finalTotalBytes - downloaded).coerceAtLeast(0)
                     val eta = if (speed > 0) (remainingBytes / (speed * 1024)).toLong() else 0L
@@ -154,20 +209,28 @@ class ModelDownloadManager(private val context: Context) {
             inputStream.close()
             connection.disconnect()
 
-            // Rename .part to final targetFile
-            if (targetFile.exists()) targetFile.delete()
-            if (!partFile.renameTo(targetFile)) {
-                return@withContext Result.failure(Exception("Failed to finalize downloaded model file"))
+            // Verify downloaded file size
+            if (partFile.length() < 1024) {
+                partFile.delete()
+                _downloadState.value = DownloadProgress(modelId = modelId, errorMessage = "Downloaded file is incomplete or corrupted (< 1 KB).")
+                return@withContext Result.failure(IllegalStateException("Downloaded file is incomplete."))
             }
 
-            // Verify integrity
+            // Verify cryptographic SHA-256 integrity if specified
             if (expectedSha256.isNotBlank()) {
-                val matches = FileIntegrityVerifier.verifyIntegrity(targetFile, expectedSha256)
+                val matches = FileIntegrityVerifier.verifyIntegrity(partFile, expectedSha256)
                 if (!matches) {
-                    targetFile.delete()
-                    _downloadState.value = DownloadProgress(errorMessage = "SHA-256 verification failed. File corrupted.")
-                    return@withContext Result.failure(Exception("SHA-256 integrity verification mismatch."))
+                    partFile.delete()
+                    _downloadState.value = DownloadProgress(modelId = modelId, errorMessage = "SHA-256 checksum mismatch. Downloaded file is corrupted or modified.")
+                    return@withContext Result.failure(Exception("SHA-256 integrity verification failed."))
                 }
+            }
+
+            // Finalize target file
+            if (targetFile.exists()) targetFile.delete()
+            if (!partFile.renameTo(targetFile)) {
+                _downloadState.value = DownloadProgress(modelId = modelId, errorMessage = "Failed to finalize downloaded model file on disk.")
+                return@withContext Result.failure(Exception("Failed to finalize downloaded model file."))
             }
 
             _downloadState.value = DownloadProgress(
@@ -180,7 +243,7 @@ class ModelDownloadManager(private val context: Context) {
 
             Result.success(targetFile)
         } catch (e: Exception) {
-            _downloadState.value = DownloadProgress(errorMessage = e.message ?: "Network error during download")
+            _downloadState.value = DownloadProgress(modelId = modelId, errorMessage = e.message ?: "Network error during download.")
             Result.failure(e)
         }
     }
@@ -191,5 +254,9 @@ class ModelDownloadManager(private val context: Context) {
 
     fun cancelDownload() {
         isCancelled = true
+    }
+
+    fun clearError() {
+        _downloadState.value = _downloadState.value.copy(errorMessage = null)
     }
 }

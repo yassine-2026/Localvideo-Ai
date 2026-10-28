@@ -289,7 +289,7 @@ class MainActivity : ComponentActivity() {
                             when (currentTab) {
                                 ScreenTab.GATE -> {
                                     ModelSetupGateScreen(
-                                        activeModel = uiState.selectedModel ?: models.firstOrNull { it.id == "microvideo-quantized" },
+                                        activeModel = uiState.selectedModel ?: models.firstOrNull(),
                                         isEngineInitialized = uiState.isEngineInitialized,
                                         downloadState = downloadState,
                                         compatibility = compatibility,

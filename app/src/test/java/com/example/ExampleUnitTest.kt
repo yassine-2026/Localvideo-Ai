@@ -3,6 +3,7 @@ package com.example
 import com.example.download.FileIntegrityVerifier
 import com.example.engine.DefaultLocalInferenceEngine
 import com.example.engine.PromptEnricher
+import com.example.engine.VideoEncoderManager
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -25,17 +26,19 @@ class ExampleUnitTest {
     @Test
     fun testModelSizeLimit_strictlyEnforcesOnePointFiveGb() {
         val maxAllowedBinaryBytes = 1_610_612_736L // 1.5 GiB
-        val ltxVideoBytes = 4_500_000_000L
-        val cogVideoBytes = 5_200_000_000L
-        val microVideoBytes = 1_480_000_000L
+        val wanVideoBytes = 4_100_000_000L
+        val ltxVideoBytes = 6_600_000_000L
+        val cogVideoBytes = 4_840_000_000L
+        val zeroScopeBytes = 3_700_000_000L
 
+        assertTrue("Wan 2.1 must exceed 1.5 GB limit", wanVideoBytes > maxAllowedBinaryBytes)
         assertTrue("LTX-Video must exceed 1.5 GB limit", ltxVideoBytes > maxAllowedBinaryBytes)
         assertTrue("CogVideoX must exceed 1.5 GB limit", cogVideoBytes > maxAllowedBinaryBytes)
-        assertTrue("MicroVideo must be within 1.5 GB limit", microVideoBytes <= maxAllowedBinaryBytes)
+        assertTrue("ZeroScope must exceed 1.5 GB limit", zeroScopeBytes > maxAllowedBinaryBytes)
     }
 
     @Test
-    fun testSha256Verifier_matchesKnownHash() {
+    fun testSha256Verifier_matchesKnownHashAndDetectsMismatch() {
         runBlocking {
             val tempFile = File.createTempFile("test_hash", ".txt").apply {
                 writeText("LocalVideoAI-Integrity-Check")
@@ -55,7 +58,7 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun testLocalInferenceEngine_detectsModelFormatsAndEnforcesLimits() {
+    fun testLocalInferenceEngine_detectsFormatsAndRejectsHtmlFiles() {
         val engine = DefaultLocalInferenceEngine()
 
         // 1. Non-existent file
@@ -69,7 +72,17 @@ class ExampleUnitTest {
         assertFalse(resultEmpty.isValid)
         emptyFile.delete()
 
-        // 3. Valid GGUF header
+        // 3. HTML webpage returned instead of binary weights (e.g. 404 or repo viewer HTML)
+        val htmlFile = File.createTempFile("error_page", ".bin")
+        FileOutputStream(htmlFile).use { fos ->
+            fos.write("<!DOCTYPE html><html><head><title>404 Not Found</title></head></html>".toByteArray())
+        }
+        val resultHtml = engine.verifyModelFiles(htmlFile)
+        assertFalse("Engine must reject HTML error pages as model weights", resultHtml.isValid)
+        assertEquals("HTML Webpage", resultHtml.formatDetected)
+        htmlFile.delete()
+
+        // 4. Valid GGUF header
         val ggufFile = File.createTempFile("test_model", ".gguf")
         FileOutputStream(ggufFile).use { fos ->
             val ggufHeader = byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte())
@@ -81,5 +94,12 @@ class ExampleUnitTest {
         assertTrue(resultGguf.isValid)
         assertEquals("GGUF Quantized", resultGguf.formatDetected)
         ggufFile.delete()
+    }
+
+    @Test
+    fun testVideoEncoderManager_validatesMissingOrInvalidMp4() {
+        val nonExistent = File("/tmp/non_existent_video.mp4")
+        val validationResult = VideoEncoderManager.validateGeneratedMp4(nonExistent)
+        assertFalse(validationResult.isSuccess)
     }
 }

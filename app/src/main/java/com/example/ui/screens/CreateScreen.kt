@@ -530,9 +530,9 @@ fun CreateScreen(
                         is InferenceState.VerifyingModel -> (if (isAr) "فحص سلامة ملف الأوزان…" else p.details) to 0.1f
                         is InferenceState.LoadingWeights -> (if (isAr) "تحميل الأوزان في الذاكرة…" else "Loading weights buffer…") to 0.2f
                         is InferenceState.InitializingEngine -> (if (isAr) "تهيئة محرك ${p.architecture}…" else "Initializing ${p.architecture} (${p.memoryAllocatedMb} MB)…") to 0.3f
-                        is InferenceState.ProcessingPrompt -> (if (isAr) "ترميز البرومبت (${p.tokens.size} رمز)…" else "Tokenizing prompt (${p.tokens.size} tokens)…") to 0.4f
+                        is InferenceState.ProcessingPrompt -> (if (isAr) "ترميز البرومبت (${p.tokenCount} كلمة)…" else "Tokenizing prompt (${p.tokenCount} tokens)…") to 0.4f
                         is InferenceState.DenoisingStep -> (if (isAr) "خطوات الاستدلال: ${p.step}/${p.totalSteps}" else "Latent Denoising: ${p.step}/${p.totalSteps} (${p.percent}%)") to (0.4f + (p.percent / 100f) * 0.3f)
-                        is InferenceState.SynthesizingFrames -> (if (isAr) "استخراج الإطارات: ${p.currentFrame}/${p.totalFrames}" else "Synthesizing frame ${p.currentFrame}/${p.totalFrames}…") to (0.7f + (p.currentFrame.toFloat() / p.totalFrames) * 0.15f)
+                        is InferenceState.DecodingTensorsToFrames -> (if (isAr) "فك ترميز الإطارات: ${p.currentFrame}/${p.totalFrames}" else "Decoding frame ${p.currentFrame}/${p.totalFrames}…") to (0.7f + (p.currentFrame.toFloat() / p.totalFrames) * 0.15f)
                         is InferenceState.EncodingMp4 -> (if (isAr) "ترميز MP4 بالعتاد (MediaCodec H.264)…" else "Hardware MediaCodec AVC Encoding…") to 0.9f
                         is InferenceState.VerifyingMp4Container -> (if (isAr) "التحقق من سلامة مسار الفيديو…" else "Verifying MP4 track integrity…") to 0.98f
                         else -> (if (isAr) "معالجة…" else "Processing…") to 0.5f
