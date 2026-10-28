@@ -36,11 +36,12 @@ com.example
 │   ├── ModelDownloadManager.kt         // Chunked HTTP streaming, resume support, ETA/speed calculations
 │   └── FileIntegrityVerifier.kt        // Cryptographic SHA-256 calculation & validation
 ├── engine/
-│   ├── LocalVideoGenerationEngine.kt   // Latent inference pipeline, frame synthesis, thread isolation
+│   ├── LocalInferenceEngine.kt         // Model binary verification, weight loading, tokenization, step denoising
 │   ├── VideoEncoderManager.kt          // MediaCodec H.264 (video/avc) + MediaMuxer MP4 container creation
 │   └── PromptEnricher.kt               // Local prompt refinement with cinematic lighting and camera vectors
 ├── ui/
 │   ├── screens/
+│   │   ├── ModelSetupGateScreen.kt     // Mandatory 6-point verification gate before prompt generation
 │   │   ├── CreateScreen.kt             // Prompt editor, parameter controls, real-time progress phases
 │   │   ├── ModelsScreen.kt             // Model cards, 1.5GB ceiling enforcement, SAF weight importer
 │   │   ├── VideoLibraryScreen.kt       // Video archive, playback launcher, export, prompt reuse

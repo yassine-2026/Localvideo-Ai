@@ -1,6 +1,7 @@
 package com.example
 
 import com.example.download.FileIntegrityVerifier
+import com.example.engine.DefaultLocalInferenceEngine
 import com.example.engine.PromptEnricher
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -8,6 +9,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.io.FileOutputStream
 
 class ExampleUnitTest {
 
@@ -40,7 +42,7 @@ class ExampleUnitTest {
             }
             val calculated = FileIntegrityVerifier.calculateSha256(tempFile)
             assertTrue(calculated.isNotBlank())
-            assertEquals(64, calculated.length) // 64 hex characters for SHA-256
+            assertEquals(64, calculated.length)
 
             val matches = FileIntegrityVerifier.verifyIntegrity(tempFile, calculated)
             assertTrue(matches)
@@ -50,5 +52,34 @@ class ExampleUnitTest {
 
             tempFile.delete()
         }
+    }
+
+    @Test
+    fun testLocalInferenceEngine_detectsModelFormatsAndEnforcesLimits() {
+        val engine = DefaultLocalInferenceEngine()
+
+        // 1. Non-existent file
+        val missingFile = File("/tmp/non_existent_weights.bin")
+        val resultMissing = engine.verifyModelFiles(missingFile)
+        assertFalse(resultMissing.isValid)
+
+        // 2. Empty file
+        val emptyFile = File.createTempFile("empty_weights", ".bin")
+        val resultEmpty = engine.verifyModelFiles(emptyFile)
+        assertFalse(resultEmpty.isValid)
+        emptyFile.delete()
+
+        // 3. Valid GGUF header
+        val ggufFile = File.createTempFile("test_model", ".gguf")
+        FileOutputStream(ggufFile).use { fos ->
+            val ggufHeader = byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte())
+            val padding = ByteArray(60)
+            fos.write(ggufHeader)
+            fos.write(padding)
+        }
+        val resultGguf = engine.verifyModelFiles(ggufFile)
+        assertTrue(resultGguf.isValid)
+        assertEquals("GGUF Quantized", resultGguf.formatDetected)
+        ggufFile.delete()
     }
 }

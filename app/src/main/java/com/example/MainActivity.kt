@@ -2,7 +2,6 @@ package com.example
 
 import android.content.Intent
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -19,8 +18,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Hardware
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Videocam
@@ -52,12 +51,12 @@ import com.example.data.db.GeneratedVideoEntity
 import com.example.ui.components.AppHeader
 import com.example.ui.screens.CreateScreen
 import com.example.ui.screens.HardwareScreen
+import com.example.ui.screens.ModelSetupGateScreen
 import com.example.ui.screens.ModelsScreen
 import com.example.ui.screens.VideoLibraryScreen
 import com.example.ui.screens.VideoPlayerDialog
 import com.example.ui.theme.CharcoalSurface
 import com.example.ui.theme.DarkMutedText
-import com.example.ui.theme.GraphiteSurfaceVariant
 import com.example.ui.theme.LocalVideoTheme
 import com.example.ui.theme.OnyxBackground
 import com.example.ui.theme.PlatinumText
@@ -69,6 +68,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 enum class ScreenTab {
+    GATE,
     CREATE,
     MODELS,
     VIDEOS,
@@ -93,10 +93,13 @@ class MainActivity : ComponentActivity() {
 
                 val snackbarHostState = remember { SnackbarHostState() }
                 val scope = rememberCoroutineScope()
-                var currentTab by remember { mutableStateOf(ScreenTab.CREATE) }
+                
+                // On launch, if model is not ready, start at GATE screen
+                var currentTab by remember {
+                    mutableStateOf(if (uiState.isEngineInitialized) ScreenTab.CREATE else ScreenTab.GATE)
+                }
                 var activePlayingVideo by remember { mutableStateOf<GeneratedVideoEntity?>(null) }
 
-                // Listen to event notifications
                 LaunchedEffect(Unit) {
                     viewModel.eventFlow.collectLatest { message ->
                         scope.launch {
@@ -111,12 +114,11 @@ class MainActivity : ComponentActivity() {
                     LayoutDirection.Ltr
                 }
 
-                // Handle system back button
-                BackHandler(enabled = currentTab != ScreenTab.CREATE || activePlayingVideo != null) {
+                BackHandler(enabled = currentTab != ScreenTab.GATE || activePlayingVideo != null) {
                     if (activePlayingVideo != null) {
                         activePlayingVideo = null
                     } else {
-                        currentTab = ScreenTab.CREATE
+                        currentTab = ScreenTab.GATE
                     }
                 }
 
@@ -141,6 +143,33 @@ class MainActivity : ComponentActivity() {
                                 containerColor = CharcoalSurface,
                                 contentColor = PlatinumText
                             ) {
+                                NavigationBarItem(
+                                    selected = currentTab == ScreenTab.GATE,
+                                    onClick = { currentTab = ScreenTab.GATE },
+                                    icon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Lock,
+                                            contentDescription = "Gate",
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    label = {
+                                        Text(
+                                            text = if (uiState.currentLocale == "ar") "البوابة" else "Gate",
+                                            fontSize = 11.sp,
+                                            fontWeight = if (currentTab == ScreenTab.GATE) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = OnyxBackground,
+                                        selectedTextColor = PureWhite,
+                                        indicatorColor = PureWhite,
+                                        unselectedIconColor = SilverMutedText,
+                                        unselectedTextColor = DarkMutedText
+                                    ),
+                                    modifier = Modifier.testTag("nav_tab_gate")
+                                )
+
                                 NavigationBarItem(
                                     selected = currentTab == ScreenTab.CREATE,
                                     onClick = { currentTab = ScreenTab.CREATE },
@@ -258,6 +287,21 @@ class MainActivity : ComponentActivity() {
                                 .padding(innerPadding)
                         ) {
                             when (currentTab) {
+                                ScreenTab.GATE -> {
+                                    ModelSetupGateScreen(
+                                        activeModel = uiState.selectedModel ?: models.firstOrNull { it.id == "microvideo-quantized" },
+                                        isEngineInitialized = uiState.isEngineInitialized,
+                                        downloadState = downloadState,
+                                        compatibility = compatibility,
+                                        currentLocale = uiState.currentLocale,
+                                        onDownloadModel = { viewModel.downloadModel(it) },
+                                        onPauseDownload = { viewModel.pauseDownload() },
+                                        onCancelDownload = { viewModel.cancelDownload() },
+                                        onImportWeights = { viewModel.importCustomModel(it) },
+                                        onInitializeEngine = { viewModel.initializeEngine(it) },
+                                        onProceedToCreate = { currentTab = ScreenTab.CREATE }
+                                    )
+                                }
                                 ScreenTab.CREATE -> {
                                     CreateScreen(
                                         uiState = uiState,
@@ -275,7 +319,7 @@ class MainActivity : ComponentActivity() {
                                             startActivity(Intent.createChooser(intent, "Share Video"))
                                         },
                                         onExportVideo = { viewModel.exportVideo(it) },
-                                        onNavigateToModels = { currentTab = ScreenTab.MODELS }
+                                        onNavigateToGate = { currentTab = ScreenTab.GATE }
                                     )
                                 }
                                 ScreenTab.MODELS -> {
@@ -318,7 +362,6 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
 
-                            // Interactive Video Player Dialog
                             activePlayingVideo?.let { playingVideo ->
                                 VideoPlayerDialog(
                                     video = playingVideo,

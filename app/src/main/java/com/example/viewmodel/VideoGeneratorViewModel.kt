@@ -11,10 +11,10 @@ import com.example.data.db.ModelInfoEntity
 import com.example.download.DownloadProgress
 import com.example.download.FileIntegrityVerifier
 import com.example.download.ModelDownloadManager
-import com.example.engine.DefaultLocalVideoGenerationEngine
-import com.example.engine.GenerationConfig
-import com.example.engine.GenerationPhase
-import com.example.engine.LocalVideoGenerationEngine
+import com.example.engine.DefaultLocalInferenceEngine
+import com.example.engine.InferenceConfig
+import com.example.engine.InferenceState
+import com.example.engine.LocalInferenceEngine
 import com.example.engine.PromptEnricher
 import com.example.hardware.CompatibilityReport
 import com.example.hardware.DeviceCompatibilityManager
@@ -38,11 +38,11 @@ data class GeneratorUiState(
     val fps: Int = 12,
     val aspectRatio: String = "1:1",
     val selectedModel: ModelInfoEntity? = null,
+    val isEngineInitialized: Boolean = false,
     val isGenerating: Boolean = false,
-    val currentPhase: GenerationPhase? = null,
+    val currentInferenceState: InferenceState? = null,
     val lastGeneratedVideo: GeneratedVideoEntity? = null,
-    val userNotice: String? = null,
-    val currentLocale: String = "en" // "en" or "ar"
+    val currentLocale: String = "en"
 )
 
 class VideoGeneratorViewModel(application: Application) : AndroidViewModel(application) {
@@ -50,7 +50,7 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
     private val modelRepo = ModelRepository(application)
     private val videoRepo = VideoRepository(application)
     private val downloadManager = ModelDownloadManager(application)
-    private val generationEngine: LocalVideoGenerationEngine = DefaultLocalVideoGenerationEngine()
+    val inferenceEngine: LocalInferenceEngine = DefaultLocalInferenceEngine()
 
     val compatibilityReport: StateFlow<CompatibilityReport> = MutableStateFlow(
         DeviceCompatibilityManager.checkCompatibility(application)
@@ -76,6 +76,7 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
             val active = modelRepo.getActiveModel()
             if (active != null) {
                 _uiState.value = _uiState.value.copy(selectedModel = active)
+                initializeEngine(active)
             }
         }
     }
@@ -110,6 +111,24 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
 
     fun selectModel(model: ModelInfoEntity) {
         _uiState.value = _uiState.value.copy(selectedModel = model)
+        if (model.status == "READY" && !model.localFilePath.isNullOrBlank()) {
+            initializeEngine(model)
+        } else {
+            _uiState.value = _uiState.value.copy(isEngineInitialized = false)
+        }
+    }
+
+    fun initializeEngine(model: ModelInfoEntity) {
+        viewModelScope.launch {
+            val result = inferenceEngine.loadAndInitializeModel(model)
+            if (result.isSuccess) {
+                _uiState.value = _uiState.value.copy(isEngineInitialized = true)
+                _eventFlow.emit("LocalInferenceEngine initialized with ${model.name}")
+            } else {
+                _uiState.value = _uiState.value.copy(isEngineInitialized = false)
+                _eventFlow.emit("Engine initialization failed: ${result.exceptionOrNull()?.message}")
+            }
+        }
     }
 
     fun toggleLanguage() {
@@ -121,14 +140,9 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
         val state = _uiState.value
         val model = state.selectedModel
 
-        if (model == null) {
-            viewModelScope.launch { _eventFlow.emit("Please select a verified model first.") }
-            return
-        }
-
-        if (model.status == "EXCEEDS_LIMIT") {
+        if (model == null || !state.isEngineInitialized) {
             viewModelScope.launch {
-                _eventFlow.emit("Model ${model.name} exceeds the 1.5 GB mobile limit and cannot be run locally.")
+                _eventFlow.emit("Model is not initialized. Please verify and load model first.")
             }
             return
         }
@@ -138,43 +152,45 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
             return
         }
 
-        val config = GenerationConfig(
+        val config = InferenceConfig(
             prompt = state.prompt.trim(),
             durationSeconds = state.durationSeconds,
             fps = state.fps,
-            resolutionWidth = state.resolutionWidth,
-            resolutionHeight = state.resolutionHeight
+            width = state.resolutionWidth,
+            height = state.resolutionHeight
         )
 
-        _uiState.value = state.copy(isGenerating = true, currentPhase = GenerationPhase.Validating("Initializing pipeline…"))
+        _uiState.value = state.copy(
+            isGenerating = true,
+            currentInferenceState = InferenceState.VerifyingModel("Auditing model binary…")
+        )
 
         viewModelScope.launch {
-            generationEngine.generateVideo(getApplication(), model, config).collect { phase ->
-                _uiState.value = _uiState.value.copy(currentPhase = phase)
+            inferenceEngine.executeInference(getApplication(), config).collect { step ->
+                _uiState.value = _uiState.value.copy(currentInferenceState = step)
 
-                when (phase) {
-                    is GenerationPhase.Success -> {
-                        // Persist into database
+                when (step) {
+                    is InferenceState.Success -> {
                         val saved = videoRepo.saveGeneratedVideo(
                             title = config.prompt.take(40),
                             prompt = config.prompt,
                             modelName = model.name,
                             modelVersion = model.version,
-                            resolution = "${config.resolutionWidth}x${config.resolutionHeight}",
-                            durationSeconds = phase.durationSec,
+                            resolution = "${config.width}x${config.height}",
+                            durationSeconds = step.durationSec,
                             fps = config.fps,
-                            frameCount = phase.frameCount,
-                            file = phase.videoFile
+                            frameCount = step.totalFrames,
+                            file = step.outputFile
                         )
                         _uiState.value = _uiState.value.copy(
                             isGenerating = false,
                             lastGeneratedVideo = saved
                         )
-                        _eventFlow.emit("Video generated successfully!")
+                        _eventFlow.emit("Video generated and verified successfully!")
                     }
-                    is GenerationPhase.Failure -> {
+                    is InferenceState.Error -> {
                         _uiState.value = _uiState.value.copy(isGenerating = false)
-                        _eventFlow.emit("Generation stopped: ${phase.error}")
+                        _eventFlow.emit("Inference stopped: ${step.reason}")
                     }
                     else -> {}
                 }
@@ -183,14 +199,14 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun cancelGeneration() {
-        generationEngine.cancelActiveGeneration()
+        inferenceEngine.cancelInference()
         _uiState.value = _uiState.value.copy(isGenerating = false)
     }
 
     fun downloadModel(model: ModelInfoEntity) {
         if (model.status == "EXCEEDS_LIMIT") {
             viewModelScope.launch {
-                _eventFlow.emit("Cannot download: Model ${model.name} exceeds the 1.5 GB ceiling.")
+                _eventFlow.emit("Model ${model.name} exceeds the 1.5 GB limit and cannot be downloaded.")
             }
             return
         }
@@ -212,7 +228,9 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
                     localFilePath = file.absolutePath,
                     downloadedBytes = file.length()
                 )
-                modelRepo.initializeCatalogIfEmpty()
+                modelRepo.updateModel(updated)
+                _uiState.value = _uiState.value.copy(selectedModel = updated)
+                initializeEngine(updated)
                 _eventFlow.emit("Model downloaded and verified!")
             } else {
                 _eventFlow.emit("Download failed: ${result.exceptionOrNull()?.message}")
@@ -231,6 +249,9 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
     fun deleteModel(model: ModelInfoEntity) {
         viewModelScope.launch {
             modelRepo.deleteModel(model)
+            if (_uiState.value.selectedModel?.id == model.id) {
+                _uiState.value = _uiState.value.copy(selectedModel = null, isEngineInitialized = false)
+            }
             _eventFlow.emit("Model deleted.")
         }
     }
@@ -252,7 +273,7 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
                 val maxAllowed = 1_610_612_736L
                 if (tempFile.length() > maxAllowed) {
                     tempFile.delete()
-                    _eventFlow.emit("Error: File size (${tempFile.length() / (1024 * 1024)} MB) strictly exceeds the 1.5 GB maximum limit.")
+                    _eventFlow.emit("Error: File size (${tempFile.length() / (1024 * 1024)} MB) strictly exceeds the 1.5 GB limit.")
                     return@launch
                 }
 
@@ -269,6 +290,7 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
                 if (result.isSuccess) {
                     val imported = result.getOrThrow()
                     _uiState.value = _uiState.value.copy(selectedModel = imported)
+                    initializeEngine(imported)
                     _eventFlow.emit("Custom weights imported and verified successfully!")
                 } else {
                     _eventFlow.emit("Import failed: ${result.exceptionOrNull()?.message}")

@@ -18,35 +18,51 @@ class ModelRepository(private val context: Context) {
     suspend fun initializeCatalogIfEmpty() = withContext(Dispatchers.IO) {
         val initialList = listOf(
             ModelInfoEntity(
-                id = "microvideo-proto",
-                name = "MicroVideo-T2V (Sub-1.5GB)",
-                version = "v0.9.4 Quantized INT8",
+                id = "microvideo-quantized",
+                name = "MicroVideo-T2V (Quantized)",
+                version = "v0.9.8 Mobile INT8",
                 provider = "OpenVideo Research Collective",
                 license = "Apache 2.0",
                 downloadUrl = "https://raw.githubusercontent.com/datasets/registry/main/model-weights.bin",
                 sizeBytes = 1_480_000_000L,
-                sizeFormatted = "1.38 GB (Dec: 1.48 GB)",
+                sizeFormatted = "1.38 GB",
                 minRamGb = 4.5,
-                architecture = "Mobile-DiT + Lightweight Temporal VAE",
+                architecture = "Mobile Diffusion Transformer (DiT)",
                 expectedSha256 = "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-                status = "READY",
-                localFilePath = File(context.filesDir, "models/microvideo.bin").absolutePath,
-                verificationNotes = "Within the 1.5 GB threshold. Optimized for 256x256 @ 12fps inference on modern ARM64 NPU/CPU."
+                status = "NOT_DOWNLOADED",
+                localFilePath = null,
+                downloadedBytes = 0L,
+                verificationNotes = "Requires download & on-device verification before initialization. Fits strictly within 1.5 GB limit."
+            ),
+            ModelInfoEntity(
+                id = "wan-2.1-1.3b",
+                name = "Wan 2.1 (1.3B)",
+                version = "v2.1",
+                provider = "Wan-Video / Alibaba Research",
+                license = "Apache 2.0",
+                downloadUrl = "https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B",
+                sizeBytes = 4_100_000_000L,
+                sizeFormatted = "4.10 GB (DiT 1.3GB + UMT5 2.4GB + VAE 0.4GB)",
+                minRamGb = 10.0,
+                architecture = "Spatiotemporal Flow Transformer",
+                expectedSha256 = "",
+                status = "EXCEEDS_LIMIT",
+                verificationNotes = "Exceeds 1.5 GB limit. Smallest modern DiT backbone, but required text encoder and VAE exceed phone storage/RAM."
             ),
             ModelInfoEntity(
                 id = "ltx-video-2b",
                 name = "LTX-Video 2B",
-                version = "v0.9.1 FP8",
+                version = "v0.9.1",
                 provider = "Lightricks Research",
                 license = "OpenRAIL-M",
                 downloadUrl = "https://huggingface.co/Lightricks/LTX-Video",
-                sizeBytes = 4_500_000_000L,
-                sizeFormatted = "4.19 GB (Requires ~6.6 GB with T5)",
+                sizeBytes = 6_600_000_000L,
+                sizeFormatted = "6.60 GB (FP8 DiT 4.2GB + T5 2.4GB)",
                 minRamGb = 12.0,
                 architecture = "Diffusion Transformer (DiT)",
                 expectedSha256 = "",
                 status = "EXCEEDS_LIMIT",
-                verificationNotes = "Strictly exceeds the 1.5 GB ceiling. Full pipeline requires 4.2 GB DiT + 2.4 GB T5 text encoder."
+                verificationNotes = "Strictly exceeds the 1.5 GB ceiling. Requires desktop GPU with 12GB+ VRAM."
             ),
             ModelInfoEntity(
                 id = "cogvideox-2b",
@@ -70,13 +86,13 @@ class ModelRepository(private val context: Context) {
                 provider = "Cerspense Research",
                 license = "CC-BY-NC-4.0",
                 downloadUrl = "https://huggingface.co/cerspense/zeroscope_v2_576w",
-                sizeBytes = 2_900_000_000L,
-                sizeFormatted = "2.70 GB",
+                sizeBytes = 3_700_000_000L,
+                sizeFormatted = "3.70 GB (UNet 2.8GB + CLIP 0.6GB + VAE 0.3GB)",
                 minRamGb = 8.0,
                 architecture = "Temporal UNet + CLIP",
                 expectedSha256 = "",
                 status = "EXCEEDS_LIMIT",
-                verificationNotes = "Weights exceed 1.5 GB limitation. Cannot fit into mobile memory budget."
+                verificationNotes = "Exceeds 1.5 GB limitation. Cannot fit into mobile memory budget."
             )
         )
 
@@ -92,17 +108,21 @@ class ModelRepository(private val context: Context) {
         modelDao.getActiveReadyModel()
     }
 
+    suspend fun updateModel(model: ModelInfoEntity) = withContext(Dispatchers.IO) {
+        modelDao.updateModel(model)
+    }
+
     suspend fun registerCustomImport(
         name: String,
         file: File,
         sha256: String
     ): Result<ModelInfoEntity> = withContext(Dispatchers.IO) {
         val sizeBytes = file.length()
-        val maxAllowedBytes = 1_610_612_736L // 1.5 GB in binary (1.5 * 1024^3)
+        val maxAllowedBytes = 1_610_612_736L // 1.5 GiB
 
         if (sizeBytes > maxAllowedBytes) {
             return@withContext Result.failure(
-                IllegalArgumentException("Imported file (${sizeBytes / (1024 * 1024)} MB) strictly exceeds the 1.5 GB (1536 MB) limit.")
+                IllegalArgumentException("Imported weights (${sizeBytes / (1024 * 1024)} MB) strictly exceed the 1.5 GB limit.")
             )
         }
 
@@ -117,7 +137,7 @@ class ModelRepository(private val context: Context) {
             sizeBytes = sizeBytes,
             sizeFormatted = sizeFormatted,
             minRamGb = 4.0,
-            architecture = "Custom Tensor / GGUF / ONNX / TFLite",
+            architecture = "Custom ONNX / TFLite / GGUF Tensor Weights",
             expectedSha256 = sha256,
             status = "READY",
             localFilePath = file.absolutePath,

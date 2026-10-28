@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -25,9 +24,8 @@ import androidx.compose.material.icons.filled.BatteryAlert
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Videocam
@@ -49,19 +47,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.db.GeneratedVideoEntity
-import com.example.data.db.ModelInfoEntity
-import com.example.engine.GenerationPhase
+import com.example.engine.InferenceState
 import com.example.hardware.CompatibilityReport
 import com.example.ui.components.LuxuryCard
 import com.example.ui.components.StatusBadge
-import com.example.ui.theme.AccentSilver
 import com.example.ui.theme.CharcoalSurface
 import com.example.ui.theme.DarkMutedText
 import com.example.ui.theme.GraphiteSurfaceVariant
@@ -70,7 +64,6 @@ import com.example.ui.theme.PlatinumText
 import com.example.ui.theme.PureWhite
 import com.example.ui.theme.SilverMutedText
 import com.example.ui.theme.SlateCardBorder
-import com.example.ui.theme.StatusAmber
 import com.example.ui.theme.StatusGreen
 import com.example.ui.theme.StatusRed
 import com.example.viewmodel.GeneratorUiState
@@ -87,12 +80,14 @@ fun CreateScreen(
     onPlayVideo: (GeneratedVideoEntity) -> Unit,
     onShareVideo: (GeneratedVideoEntity) -> Unit,
     onExportVideo: (GeneratedVideoEntity) -> Unit,
-    onNavigateToModels: () -> Unit,
+    onNavigateToGate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
     val isAr = uiState.currentLocale == "ar"
     var showAdvancedSettings by remember { mutableStateOf(false) }
+
+    val isModelReady = uiState.isEngineInitialized && uiState.selectedModel?.status == "READY"
 
     Column(
         modifier = modifier
@@ -109,7 +104,7 @@ fun CreateScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (isAr) "النموذج النشط:" else "ACTIVE ENGINE:",
+                        text = if (isAr) "محرك الاستدلال المحلي:" else "ON-DEVICE INFERENCE ENGINE:",
                         style = MaterialTheme.typography.labelSmall.copy(
                             color = SilverMutedText,
                             fontWeight = FontWeight.Bold,
@@ -118,27 +113,30 @@ fun CreateScreen(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = uiState.selectedModel?.name ?: (if (isAr) "لم يتم تحديد نموذج" else "No model selected"),
+                        text = uiState.selectedModel?.name ?: (if (isAr) "لم يتم تنزيل نموذج بعد" else "No Model Verified"),
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             color = PureWhite
                         )
                     )
                     Text(
-                        text = uiState.selectedModel?.let { "${it.sizeFormatted} • ${it.architecture}" }
-                            ?: (if (isAr) "اختر نموذجًا من قائمة النماذج" else "Select a model from catalog"),
+                        text = if (isModelReady) {
+                            if (isAr) "المحرك محمل في الذاكرة وجاهز للتوليد" else "Loaded in memory & verified"
+                        } else {
+                            if (isAr) "مغلق: يتطلب تنزيل نموذج حقيقي وتهيئة المحرك" else "Gated: Setup & initialization required"
+                        },
                         style = MaterialTheme.typography.bodySmall.copy(
-                            color = SilverMutedText,
+                            color = if (isModelReady) StatusGreen else SilverMutedText,
                             fontSize = 11.sp
                         )
                     )
                 }
 
                 Column(horizontalAlignment = Alignment.End) {
-                    StatusBadge(status = uiState.selectedModel?.status ?: "NOT_DOWNLOADED")
+                    StatusBadge(status = if (isModelReady) "READY" else (uiState.selectedModel?.status ?: "NOT_DOWNLOADED"))
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = if (isAr) "تغيير" else "Change",
+                        text = if (isAr) "بوابة الفحص" else "Gate Setup",
                         style = MaterialTheme.typography.labelSmall.copy(
                             color = PureWhite,
                             fontWeight = FontWeight.SemiBold
@@ -146,7 +144,7 @@ fun CreateScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(GraphiteSurfaceVariant)
-                            .clickable { onNavigateToModels() }
+                            .clickable { onNavigateToGate() }
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
@@ -155,34 +153,53 @@ fun CreateScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Device RAM Warning if limited
-        if (!compatibility.isRamSufficient) {
+        // Gate Warning if not initialized
+        if (!isModelReady) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(StatusRed.copy(alpha = 0.12f))
-                    .border(1.dp, StatusRed.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                    .padding(12.dp)
+                    .background(CharcoalSurface)
+                    .border(1.dp, SlateCardBorder, RoundedCornerShape(12.dp))
+                    .padding(14.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = "Warning",
-                        tint = StatusRed,
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Locked",
+                        tint = PureWhite,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = if (isAr)
-                            "تنبيه العتاد: ذاكرة RAM المتاحة (${compatibility.totalRamGb} GB) أقل من 4 GB. قد يفشل التوليد بسبب قيود الذاكرة."
-                        else
-                            "Hardware Warning: Device RAM (${compatibility.totalRamGb} GB) is below 4.0 GB. Generation may encounter OutOfMemory.",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = PureWhite,
-                            fontSize = 11.sp
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (isAr) "بوابة التحقق مفعلة" else "Setup Gate Enforced",
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = PureWhite
+                            )
                         )
-                    )
+                        Text(
+                            text = if (isAr)
+                                "يجب تنزيل نموذج حقيقي وتهيئة محرك الاستدلال قبل السماح بإنشاء الفيديو."
+                            else
+                                "You must download and initialize an authentic on-device model first.",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = SilverMutedText,
+                                fontSize = 11.sp
+                            )
+                        )
+                    }
+                    Button(
+                        onClick = onNavigateToGate,
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PureWhite,
+                            contentColor = OnyxBackground
+                        )
+                    ) {
+                        Text(text = if (isAr) "فتح البوابة" else "Open Gate", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -279,7 +296,7 @@ fun CreateScreen(
                     }
 
                     Text(
-                        text = if (isAr) "*يحسن الوصف فقط ولا يعدل الأوزان" else "*Refines text wording locally",
+                        text = if (isAr) "*يحسن الصياغة فقط ولا يعدل الأوزان" else "*Refines text wording locally",
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = DarkMutedText,
                             fontSize = 10.sp
@@ -375,7 +392,7 @@ fun CreateScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf(256 to 256, 384 to 384, 512 to 512).forEach { (w, h) ->
+                        listOf(256 to 256, 384 to 384).forEach { (w, h) ->
                             val selected = uiState.resolutionWidth == w
                             Box(
                                 modifier = Modifier
@@ -409,7 +426,7 @@ fun CreateScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf(10, 12, 15).forEach { f ->
+                        listOf(10, 12).forEach { f ->
                             val selected = uiState.fps == f
                             Box(
                                 modifier = Modifier
@@ -452,7 +469,7 @@ fun CreateScreen(
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = if (isAr)
-                    "تنبيه: التوليد على المعالج يستهلك طاقة البطارية وقد يستغرق من 30 إلى 90 ثانية حسب سرعة الجهاز."
+                    "تنبيه: التوليد على المعالج يستهلك طاقة البطارية ويستغرق من 30 إلى 90 ثانية."
                 else
                     "Advisory: On-device generation is compute-intensive and consumes battery power.",
                 style = MaterialTheme.typography.bodySmall.copy(
@@ -474,7 +491,7 @@ fun CreateScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (isAr) "جارٍ المعالجة الحقيقية على الهاتف" else "ON-DEVICE SYNTHESIS RUNNING",
+                            text = if (isAr) "جارٍ الاستدلال العصبي الحقيقي على الهاتف" else "NEURAL INFERENCE RUNNING",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 color = StatusGreen,
                                 fontWeight = FontWeight.Bold,
@@ -509,13 +526,15 @@ fun CreateScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    val (phaseText, progressVal) = when (val p = uiState.currentPhase) {
-                        is GenerationPhase.Validating -> (if (isAr) "التحقق من المدخلات ومساحة الذاكرة…" else p.message) to 0.1f
-                        is GenerationPhase.InitializingEngine -> (if (isAr) "تهيئة محرك الاستدلال (${p.modelName})…" else "Allocating model weights (${p.memoryAllocatedMb} MB)…") to 0.2f
-                        is GenerationPhase.RunningInference -> (if (isAr) "خطوات الاستدلال العصبي: ${p.step}/${p.totalSteps}" else "Neural Latent Steps: ${p.step}/${p.totalSteps} (${p.percent}%)") to (p.percent / 100f)
-                        is GenerationPhase.ExtractingFrames -> (if (isAr) "استخراج إطارات الفيديو: ${p.currentFrame}/${p.totalFrames}" else "Synthesizing frame ${p.currentFrame}/${p.totalFrames}…") to (p.currentFrame.toFloat() / p.totalFrames)
-                        is GenerationPhase.EncodingMp4 -> (if (isAr) "ترميز MP4 بالعتاد (MediaCodec H.264)…" else "Hardware MediaCodec AVC Encoding…") to 0.9f
-                        is GenerationPhase.VerifyingOutput -> (if (isAr) "فحص سلامة حاوية MP4 الناتجة…" else "Verifying MP4 stream integrity…") to 0.98f
+                    val (phaseText, progressVal) = when (val p = uiState.currentInferenceState) {
+                        is InferenceState.VerifyingModel -> (if (isAr) "فحص سلامة ملف الأوزان…" else p.details) to 0.1f
+                        is InferenceState.LoadingWeights -> (if (isAr) "تحميل الأوزان في الذاكرة…" else "Loading weights buffer…") to 0.2f
+                        is InferenceState.InitializingEngine -> (if (isAr) "تهيئة محرك ${p.architecture}…" else "Initializing ${p.architecture} (${p.memoryAllocatedMb} MB)…") to 0.3f
+                        is InferenceState.ProcessingPrompt -> (if (isAr) "ترميز البرومبت (${p.tokens.size} رمز)…" else "Tokenizing prompt (${p.tokens.size} tokens)…") to 0.4f
+                        is InferenceState.DenoisingStep -> (if (isAr) "خطوات الاستدلال: ${p.step}/${p.totalSteps}" else "Latent Denoising: ${p.step}/${p.totalSteps} (${p.percent}%)") to (0.4f + (p.percent / 100f) * 0.3f)
+                        is InferenceState.SynthesizingFrames -> (if (isAr) "استخراج الإطارات: ${p.currentFrame}/${p.totalFrames}" else "Synthesizing frame ${p.currentFrame}/${p.totalFrames}…") to (0.7f + (p.currentFrame.toFloat() / p.totalFrames) * 0.15f)
+                        is InferenceState.EncodingMp4 -> (if (isAr) "ترميز MP4 بالعتاد (MediaCodec H.264)…" else "Hardware MediaCodec AVC Encoding…") to 0.9f
+                        is InferenceState.VerifyingMp4Container -> (if (isAr) "التحقق من سلامة مسار الفيديو…" else "Verifying MP4 track integrity…") to 0.98f
                         else -> (if (isAr) "معالجة…" else "Processing…") to 0.5f
                     }
 
@@ -545,7 +564,7 @@ fun CreateScreen(
         // Primary Generate Button
         Button(
             onClick = onStartGeneration,
-            enabled = !uiState.isGenerating && (uiState.selectedModel?.status != "EXCEEDS_LIMIT"),
+            enabled = !uiState.isGenerating && isModelReady,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(54.dp)
