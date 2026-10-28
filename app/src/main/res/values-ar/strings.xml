@@ -1,0 +1,31 @@
+<resources>
+    <string name="app_name">LocalVideo AI</string>
+    <string name="tagline">محرك توليد الفيديو بالذكاء الاصطناعي على الهاتف</string>
+    <string name="model_status_not_downloaded">غير مثبت</string>
+    <string name="model_status_downloading">جارٍ التنزيل…</string>
+    <string name="model_status_ready">مثبت وتم التحقق</string>
+    <string name="model_status_incompatible">الجهاز غير متوافق</string>
+    <string name="model_status_verifying">جارٍ التحقق من السلامة…</string>
+    <string name="prompt_hint">صف مشهد الفيديو بالتفصيل (مثال: أمواج سينمائية عاتية تصطدم بصخور بازلتية سوداء وسط ضباب عاصف)…</string>
+    <string name="generate_video">إنشاء الفيديو</string>
+    <string name="generating_video">جارٍ توليد الإطارات والترميز…</string>
+    <string name="cancel">إلغاء</string>
+    <string name="nav_create">الإنشاء</string>
+    <string name="nav_models">النماذج</string>
+    <string name="nav_videos">فيديوهاتي</string>
+    <string name="nav_device">العتاد</string>
+    <string name="download_model">تنزيل النموذج</string>
+    <string name="delete_model">حذف النموذج</string>
+    <string name="verify_checksum">التحقق من تجزئة SHA-256</string>
+    <string name="import_model">استيراد أوزان مخصصة</string>
+    <string name="play">تشغيل</string>
+    <string name="share">مشاركة</string>
+    <string name="export">تصدير إلى المعرض</string>
+    <string name="delete">حذف</string>
+    <string name="reuse_prompt">إعادة استخدام الوصف</string>
+    <string name="duration">المدة</string>
+    <string name="resolution">الدقة</string>
+    <string name="aspect_ratio">نسبة الأبعاد</string>
+    <string name="fps">معدل الإطارات</string>
+    <string name="compatibility_report">توافق عتاد الهاتف</string>
+</resources>

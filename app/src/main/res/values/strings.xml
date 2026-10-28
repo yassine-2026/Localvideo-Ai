@@ -1,0 +1,31 @@
+<resources>
+    <string name="app_name">LocalVideo AI</string>
+    <string name="tagline">On-Device AI Video Generation Engine</string>
+    <string name="model_status_not_downloaded">Not Downloaded</string>
+    <string name="model_status_downloading">Downloading…</string>
+    <string name="model_status_ready">Installed &amp; Verified</string>
+    <string name="model_status_incompatible">Incompatible Device</string>
+    <string name="model_status_verifying">Verifying Integrity…</string>
+    <string name="prompt_hint">Describe your video scene in detail (e.g., Dramatic cinematic waves crashing against black basalt cliffs in stormy mist)…</string>
+    <string name="generate_video">Generate Video</string>
+    <string name="generating_video">Synthesizing Frames &amp; Encoding…</string>
+    <string name="cancel">Cancel</string>
+    <string name="nav_create">Create</string>
+    <string name="nav_models">Models</string>
+    <string name="nav_videos">My Videos</string>
+    <string name="nav_device">Hardware</string>
+    <string name="download_model">Download Model</string>
+    <string name="delete_model">Delete Model</string>
+    <string name="verify_checksum">Verify SHA-256</string>
+    <string name="import_model">Import Custom Weights</string>
+    <string name="play">Play</string>
+    <string name="share">Share</string>
+    <string name="export">Export to Gallery</string>
+    <string name="delete">Delete</string>
+    <string name="reuse_prompt">Reuse Prompt</string>
+    <string name="duration">Duration</string>
+    <string name="resolution">Resolution</string>
+    <string name="aspect_ratio">Aspect Ratio</string>
+    <string name="fps">FPS</string>
+    <string name="compatibility_report">Hardware Compatibility</string>
+</resources>

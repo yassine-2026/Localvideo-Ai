@@ -1,0 +1,6 @@
+{
+  "name": "LocalVideo AI",
+  "description": "Real native on-device AI video generator with hardware compatibility analysis, model manager, and MediaCodec MP4 pipeline.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
