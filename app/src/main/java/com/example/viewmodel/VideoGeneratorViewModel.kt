@@ -67,6 +67,9 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
     private val _uiState = MutableStateFlow(GeneratorUiState())
     val uiState: StateFlow<GeneratorUiState> = _uiState.asStateFlow()
 
+    private val _importReport = MutableStateFlow<com.example.data.model.ImportInspectionReport?>(null)
+    val importReport: StateFlow<com.example.data.model.ImportInspectionReport?> = _importReport.asStateFlow()
+
     private val _eventFlow = MutableSharedFlow<String>()
     val eventFlow: SharedFlow<String> = _eventFlow.asSharedFlow()
 
@@ -256,49 +259,70 @@ class VideoGeneratorViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun importCustomModel(uri: Uri) {
+    fun inspectImportUris(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val report = com.example.data.model.ModelImportInspector.inspectUris(getApplication(), uris)
+        _importReport.value = report
+    }
+
+    fun dismissImportReport() {
+        _importReport.value = null
+    }
+
+    fun confirmImport(report: com.example.data.model.ImportInspectionReport) {
         viewModelScope.launch {
             try {
                 val context = getApplication<Application>()
-                val contentResolver = context.contentResolver
-                val inputStream = contentResolver.openInputStream(uri)
-                    ?: throw Exception("Could not open file stream")
-
-                val tempFile = File(context.cacheDir, "imported_weights_${System.currentTimeMillis()}.bin")
-                FileOutputStream(tempFile).use { out ->
-                    inputStream.copyTo(out)
-                }
-
-                // Check size limit: 1.5 GB
-                val maxAllowed = 1_610_612_736L
-                if (tempFile.length() > maxAllowed) {
-                    tempFile.delete()
-                    _eventFlow.emit("Error: File size (${tempFile.length() / (1024 * 1024)} MB) strictly exceeds the 1.5 GB limit.")
-                    return@launch
-                }
-
-                val sha256 = FileIntegrityVerifier.calculateSha256(tempFile)
-                val destFile = File(downloadManager.getModelsDir(), tempFile.name)
-                tempFile.renameTo(destFile)
-
-                val result = modelRepo.registerCustomImport(
-                    name = "Imported Weights",
-                    file = destFile,
-                    sha256 = sha256
-                )
+                val modelsDir = downloadManager.getModelsDir()
+                val result = com.example.data.model.ModelImportInspector.executeImport(context, report, modelsDir)
 
                 if (result.isSuccess) {
-                    val imported = result.getOrThrow()
-                    _uiState.value = _uiState.value.copy(selectedModel = imported)
-                    initializeEngine(imported)
-                    _eventFlow.emit("Custom weights imported and verified successfully!")
+                    val primaryFile = result.getOrThrow()
+                    val sha256 = FileIntegrityVerifier.calculateSha256(primaryFile)
+                    val modelName = primaryFile.parentFile?.name ?: primaryFile.nameWithoutExtension
+
+                    val registerResult = modelRepo.registerCustomImport(
+                        name = "Custom Bundle ($modelName)",
+                        file = primaryFile,
+                        sha256 = sha256
+                    )
+
+                    if (registerResult.isSuccess) {
+                        val imported = registerResult.getOrThrow()
+                        _uiState.value = _uiState.value.copy(selectedModel = imported)
+                        initializeEngine(imported)
+                        _importReport.value = null
+                        _eventFlow.emit("تم استيراد حزمة النموذج والتحقق منها بنجاح!")
+                    } else {
+                        _eventFlow.emit("فشل تسجيل النموذج: ${registerResult.exceptionOrNull()?.message}")
+                    }
                 } else {
-                    _eventFlow.emit("Import failed: ${result.exceptionOrNull()?.message}")
+                    _eventFlow.emit("فشل الاستيراد: ${result.exceptionOrNull()?.message}")
                 }
             } catch (e: Exception) {
-                _eventFlow.emit("Import error: ${e.message}")
+                _eventFlow.emit("خطأ أثناء الاستيراد: ${e.message}")
             }
         }
+    }
+
+    fun copyTextToClipboard(label: String, text: String) {
+        try {
+            val context = getApplication<Application>()
+            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = android.content.ClipData.newPlainText(label, text)
+            clipboard.setPrimaryClip(clip)
+            viewModelScope.launch {
+                _eventFlow.emit(if (_uiState.value.currentLocale == "ar") "تم نسخ الرابط المباشر إلى الحافظة" else "Direct link copied to clipboard")
+            }
+        } catch (e: Exception) {
+            viewModelScope.launch {
+                _eventFlow.emit("Failed to copy: ${e.message}")
+            }
+        }
+    }
+
+    fun importCustomModel(uri: Uri) {
+        inspectImportUris(listOf(uri))
     }
 
     fun deleteVideo(video: GeneratedVideoEntity) {

@@ -405,6 +405,16 @@ fun ModelSetupGateScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 ModelResearchRow(
+                    name = "ZeroScope v2 (576w)",
+                    size = "3.76 GB",
+                    provider = "Cerspense Research",
+                    repoUrl = "https://huggingface.co/cerspense/zeroscope_v2_576w",
+                    context = context
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                ModelResearchRow(
                     name = "Wan 2.1 (1.3B)",
                     size = "4.10 GB",
                     provider = "Alibaba Wan-Video",
@@ -415,20 +425,20 @@ fun ModelSetupGateScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 ModelResearchRow(
-                    name = "LTX-Video (2B)",
-                    size = "6.60 GB",
-                    provider = "Lightricks Research",
-                    repoUrl = "https://huggingface.co/Lightricks/LTX-Video",
+                    name = "CogVideoX-2B",
+                    size = "4.84 GB",
+                    provider = "THUDM / Zhipu AI",
+                    repoUrl = "https://huggingface.co/THUDM/CogVideoX-2b",
                     context = context
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 ModelResearchRow(
-                    name = "CogVideoX-2B",
-                    size = "4.84 GB",
-                    provider = "THUDM / Zhipu AI",
-                    repoUrl = "https://huggingface.co/THUDM/CogVideoX-2b",
+                    name = "LTX-Video (2B)",
+                    size = "6.94 GB",
+                    provider = "Lightricks Research",
+                    repoUrl = "https://huggingface.co/Lightricks/LTX-Video",
                     context = context
                 )
             }

@@ -17,6 +17,23 @@ class ModelRepository(private val context: Context) {
 
     suspend fun initializeCatalogIfEmpty() = withContext(Dispatchers.IO) {
         val initialList = listOf(
+            // 1. ZeroScope v2 (576w) - Lightest (~3.76 GB)
+            ModelInfoEntity(
+                id = "zeroscope-v2",
+                name = "ZeroScope v2 (576w)",
+                version = "v2.0 FP16",
+                provider = "Cerspense Research",
+                license = "CC-BY-NC-4.0",
+                downloadUrl = "https://huggingface.co/cerspense/zeroscope_v2_576w",
+                sizeBytes = 3_765_000_000L,
+                sizeFormatted = "3.76 GB (UNet 2.75GB + OpenCLIP 680MB + VAE 335MB)",
+                minRamGb = 8.0,
+                architecture = "Temporal UNet + OpenCLIP",
+                expectedSha256 = "",
+                status = "EXCEEDS_LIMIT",
+                verificationNotes = "أخف نموذج مفتوح المصدر (3.76 GB إجمالي الملفات). يتجاوز سقف 1.5 GB الصارم للهاتف."
+            ),
+            // 2. Wan 2.1 (1.3B) (~4.10 - 5.6 GB)
             ModelInfoEntity(
                 id = "wan-2.1-1.3b",
                 name = "Wan 2.1 (1.3B)",
@@ -27,26 +44,12 @@ class ModelRepository(private val context: Context) {
                 sizeBytes = 4_100_000_000L,
                 sizeFormatted = "4.10 GB (DiT 1.3GB + UMT5 2.4GB + VAE 0.4GB)",
                 minRamGb = 10.0,
-                architecture = "Spatiotemporal Flow Transformer",
+                architecture = "Spatiotemporal Flow DiT + UMT5-XXL",
                 expectedSha256 = "",
                 status = "EXCEEDS_LIMIT",
-                verificationNotes = "أصغر نموذج DiT حقيقي متاح عالمياً. يتجاوز حد 1.5 GB ويتطلب 10 GB RAM."
+                verificationNotes = "أصغر معمارية DiT حقيقية في العالم. تتجاوز حد 1.5 GB وتتطلب 10 GB RAM."
             ),
-            ModelInfoEntity(
-                id = "ltx-video-2b",
-                name = "LTX-Video 2B",
-                version = "v0.9.1",
-                provider = "Lightricks Research",
-                license = "OpenRAIL-M",
-                downloadUrl = "https://huggingface.co/Lightricks/LTX-Video",
-                sizeBytes = 6_600_000_000L,
-                sizeFormatted = "6.60 GB (FP8 DiT 4.2GB + T5 2.4GB)",
-                minRamGb = 12.0,
-                architecture = "Diffusion Transformer (DiT)",
-                expectedSha256 = "",
-                status = "EXCEEDS_LIMIT",
-                verificationNotes = "يتطلب بطاقة معالجة مكتبية بذاكرة 12 GB. يتجاوز حد الذاكرة المسموح به للهاتف."
-            ),
+            // 3. CogVideoX-2B (~4.84 - 9.6 GB)
             ModelInfoEntity(
                 id = "cogvideox-2b",
                 name = "CogVideoX-2B",
@@ -54,28 +57,29 @@ class ModelRepository(private val context: Context) {
                 provider = "THUDM / Zhipu AI",
                 license = "Apache 2.0",
                 downloadUrl = "https://huggingface.co/THUDM/CogVideoX-2b",
-                sizeBytes = 5_200_000_000L,
-                sizeFormatted = "4.84 GB",
-                minRamGb = 14.0,
-                architecture = "3D VAE + Expert DiT",
+                sizeBytes = 4_840_000_000L,
+                sizeFormatted = "4.84 GB (DiT 2.2GB + T5 4.8GB + VAE 0.4GB)",
+                minRamGb = 12.0,
+                architecture = "3D Causal VAE + Expert DiT",
                 expectedSha256 = "",
                 status = "EXCEEDS_LIMIT",
-                verificationNotes = "يتجاوز حد 1.5 GB. لا يمكن تشغيله على الهواتف دون تسريع سحابي."
+                verificationNotes = "محول انتشار ثلاثي الأبعاد سينمائي. يتجاوز حد 1.5 GB ويتطلب 12-14 GB RAM."
             ),
+            // 4. LTX-Video (2B) - Heaviest (~6.94 GB)
             ModelInfoEntity(
-                id = "zeroscope-v2",
-                name = "ZeroScope v2 (576w)",
-                version = "v2.0",
-                provider = "Cerspense Research",
-                license = "CC-BY-NC-4.0",
-                downloadUrl = "https://huggingface.co/cerspense/zeroscope_v2_576w",
-                sizeBytes = 3_700_000_000L,
-                sizeFormatted = "3.70 GB (UNet 2.8GB + CLIP 0.6GB + VAE 0.3GB)",
-                minRamGb = 8.0,
-                architecture = "Temporal UNet + CLIP",
+                id = "ltx-video-2b",
+                name = "LTX-Video (2B)",
+                version = "v0.9.1 FP8",
+                provider = "Lightricks Research",
+                license = "OpenRAIL-M",
+                downloadUrl = "https://huggingface.co/Lightricks/LTX-Video",
+                sizeBytes = 6_940_000_000L,
+                sizeFormatted = "6.94 GB (DiT 4.19GB + T5 2.4GB + VAE 0.35GB)",
+                minRamGb = 12.0,
+                architecture = "Diffusion Transformer (DiT 2B) + T5-XXL",
                 expectedSha256 = "",
                 status = "EXCEEDS_LIMIT",
-                verificationNotes = "يتجاوز حد 1.5 GB ولا يمكن تحميله في ذاكرة الهاتف."
+                verificationNotes = "محول انتشار عالي السرعة (6.94 GB حزمة الملفات). يتطلب 12 GB ذاكرة رسومية."
             )
         )
 
@@ -92,6 +96,17 @@ class ModelRepository(private val context: Context) {
             val existing = modelDao.getModelById(model.id)
             if (existing == null) {
                 modelDao.insertModel(model)
+            } else {
+                // Update metadata if needed
+                modelDao.updateModel(
+                    existing.copy(
+                        name = model.name,
+                        version = model.version,
+                        sizeBytes = model.sizeBytes,
+                        sizeFormatted = model.sizeFormatted,
+                        verificationNotes = model.verificationNotes
+                    )
+                )
             }
         }
     }

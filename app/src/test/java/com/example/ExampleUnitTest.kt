@@ -102,4 +102,28 @@ class ExampleUnitTest {
         val validationResult = VideoEncoderManager.validateGeneratedMp4(nonExistent)
         assertFalse(validationResult.isSuccess)
     }
+
+    @Test
+    fun testModelCatalog_orderedFromLightestToHeaviestWithValidBreakdowns() {
+        val catalog = com.example.data.model.ModelCatalog.RESEARCH_MODELS
+        assertEquals(4, catalog.size)
+
+        // Verify order from lightest to heaviest
+        assertEquals("zeroscope-v2", catalog[0].id)
+        assertEquals("wan-2.1-1.3b", catalog[1].id)
+        assertEquals("cogvideox-2b", catalog[2].id)
+        assertEquals("ltx-video-2b", catalog[3].id)
+
+        assertTrue(catalog[0].totalSizeBytes < catalog[1].totalSizeBytes)
+        assertTrue(catalog[1].totalSizeBytes < catalog[2].totalSizeBytes)
+        assertTrue(catalog[2].totalSizeBytes < catalog[3].totalSizeBytes)
+
+        // Verify all 4 have itemized multi-file components
+        for (model in catalog) {
+            assertTrue("Model ${model.name} must have multiple components", model.components.size >= 3)
+            assertFalse("Model ${model.name} must not be compatible with 1.5 GB phone limit", model.isCompatibleWithDeviceLimit)
+            assertTrue("Model ${model.name} must have verified Hugging Face repo URL", model.huggingFaceRepoUrl.startsWith("https://huggingface.co/"))
+            assertTrue("Model ${model.name} must have direct download URL", !model.directDownloadUrl.isNullOrBlank())
+        }
+    }
 }

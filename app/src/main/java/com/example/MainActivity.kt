@@ -18,12 +18,15 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
+import com.example.ui.components.ImportInspectionDialog
+import com.example.ui.screens.HomeScreen
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -68,9 +71,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 enum class ScreenTab {
+    HOME,
     GATE,
     CREATE,
-    MODELS,
     VIDEOS,
     HARDWARE
 }
@@ -90,14 +93,13 @@ class MainActivity : ComponentActivity() {
                 val models by viewModel.modelsList.collectAsStateWithLifecycle()
                 val videos by viewModel.videosList.collectAsStateWithLifecycle()
                 val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
+                val importReport by viewModel.importReport.collectAsStateWithLifecycle()
 
                 val snackbarHostState = remember { SnackbarHostState() }
                 val scope = rememberCoroutineScope()
                 
-                // On launch, if model is not ready, start at GATE screen
-                var currentTab by remember {
-                    mutableStateOf(if (uiState.isEngineInitialized) ScreenTab.CREATE else ScreenTab.GATE)
-                }
+                // On launch, directly open HOME screen
+                var currentTab by remember { mutableStateOf(ScreenTab.HOME) }
                 var activePlayingVideo by remember { mutableStateOf<GeneratedVideoEntity?>(null) }
 
                 LaunchedEffect(Unit) {
@@ -114,11 +116,11 @@ class MainActivity : ComponentActivity() {
                     LayoutDirection.Ltr
                 }
 
-                BackHandler(enabled = currentTab != ScreenTab.GATE || activePlayingVideo != null) {
+                BackHandler(enabled = currentTab != ScreenTab.HOME || activePlayingVideo != null) {
                     if (activePlayingVideo != null) {
                         activePlayingVideo = null
                     } else {
-                        currentTab = ScreenTab.GATE
+                        currentTab = ScreenTab.HOME
                     }
                 }
 
@@ -143,6 +145,33 @@ class MainActivity : ComponentActivity() {
                                 containerColor = CharcoalSurface,
                                 contentColor = PlatinumText
                             ) {
+                                NavigationBarItem(
+                                    selected = currentTab == ScreenTab.HOME,
+                                    onClick = { currentTab = ScreenTab.HOME },
+                                    icon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Home,
+                                            contentDescription = "Home",
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    label = {
+                                        Text(
+                                            text = if (uiState.currentLocale == "ar") "الرئيسية" else "Home",
+                                            fontSize = 11.sp,
+                                            fontWeight = if (currentTab == ScreenTab.HOME) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = OnyxBackground,
+                                        selectedTextColor = PureWhite,
+                                        indicatorColor = PureWhite,
+                                        unselectedIconColor = SilverMutedText,
+                                        unselectedTextColor = DarkMutedText
+                                    ),
+                                    modifier = Modifier.testTag("nav_tab_home")
+                                )
+
                                 NavigationBarItem(
                                     selected = currentTab == ScreenTab.GATE,
                                     onClick = { currentTab = ScreenTab.GATE },
@@ -195,33 +224,6 @@ class MainActivity : ComponentActivity() {
                                         unselectedTextColor = DarkMutedText
                                     ),
                                     modifier = Modifier.testTag("nav_tab_create")
-                                )
-
-                                NavigationBarItem(
-                                    selected = currentTab == ScreenTab.MODELS,
-                                    onClick = { currentTab = ScreenTab.MODELS },
-                                    icon = {
-                                        Icon(
-                                            imageVector = Icons.Default.Layers,
-                                            contentDescription = "Models",
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    },
-                                    label = {
-                                        Text(
-                                            text = if (uiState.currentLocale == "ar") "النماذج" else "Models",
-                                            fontSize = 11.sp,
-                                            fontWeight = if (currentTab == ScreenTab.MODELS) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                    },
-                                    colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = OnyxBackground,
-                                        selectedTextColor = PureWhite,
-                                        indicatorColor = PureWhite,
-                                        unselectedIconColor = SilverMutedText,
-                                        unselectedTextColor = DarkMutedText
-                                    ),
-                                    modifier = Modifier.testTag("nav_tab_models")
                                 )
 
                                 NavigationBarItem(
@@ -287,6 +289,16 @@ class MainActivity : ComponentActivity() {
                                 .padding(innerPadding)
                         ) {
                             when (currentTab) {
+                                ScreenTab.HOME -> {
+                                    HomeScreen(
+                                        installedModel = uiState.selectedModel,
+                                        isEngineInitialized = uiState.isEngineInitialized,
+                                        currentLocale = uiState.currentLocale,
+                                        onImportFiles = { uris -> viewModel.inspectImportUris(uris) },
+                                        onCopyDirectUrl = { label, url -> viewModel.copyTextToClipboard(label, url) },
+                                        onNavigateToGate = { currentTab = ScreenTab.GATE }
+                                    )
+                                }
                                 ScreenTab.GATE -> {
                                     ModelSetupGateScreen(
                                         activeModel = uiState.selectedModel ?: models.firstOrNull(),
@@ -297,7 +309,7 @@ class MainActivity : ComponentActivity() {
                                         onDownloadModel = { viewModel.downloadModel(it) },
                                         onPauseDownload = { viewModel.pauseDownload() },
                                         onCancelDownload = { viewModel.cancelDownload() },
-                                        onImportWeights = { viewModel.importCustomModel(it) },
+                                        onImportWeights = { viewModel.inspectImportUris(listOf(it)) },
                                         onInitializeEngine = { viewModel.initializeEngine(it) },
                                         onProceedToCreate = { currentTab = ScreenTab.CREATE }
                                     )
@@ -320,20 +332,6 @@ class MainActivity : ComponentActivity() {
                                         },
                                         onExportVideo = { viewModel.exportVideo(it) },
                                         onNavigateToGate = { currentTab = ScreenTab.GATE }
-                                    )
-                                }
-                                ScreenTab.MODELS -> {
-                                    ModelsScreen(
-                                        models = models,
-                                        selectedModel = uiState.selectedModel,
-                                        downloadState = downloadState,
-                                        currentLocale = uiState.currentLocale,
-                                        onSelectModel = { viewModel.selectModel(it) },
-                                        onDownloadModel = { viewModel.downloadModel(it) },
-                                        onPauseDownload = { viewModel.pauseDownload() },
-                                        onCancelDownload = { viewModel.cancelDownload() },
-                                        onDeleteModel = { viewModel.deleteModel(it) },
-                                        onImportCustomWeights = { viewModel.importCustomModel(it) }
                                     )
                                 }
                                 ScreenTab.VIDEOS -> {
@@ -360,6 +358,16 @@ class MainActivity : ComponentActivity() {
                                         currentLocale = uiState.currentLocale
                                     )
                                 }
+                            }
+
+                            // Model Import Audit & Inspection Dialog Overlay
+                            importReport?.let { report ->
+                                ImportInspectionDialog(
+                                    report = report,
+                                    currentLocale = uiState.currentLocale,
+                                    onConfirm = { viewModel.confirmImport(report) },
+                                    onDismiss = { viewModel.dismissImportReport() }
+                                )
                             }
 
                             activePlayingVideo?.let { playingVideo ->
