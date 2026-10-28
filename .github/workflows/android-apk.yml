@@ -1,0 +1,95 @@
+name: Build Android Debug APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Assemble Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Prepare Keystore and Environment Files
+        run: |
+          echo "=== Setting up build prerequisites ==="
+          
+          # Restore debug.keystore from debug.keystore.base64 if present, or generate one
+          if [ -f "debug.keystore.base64" ]; then
+            echo "Restoring debug.keystore from debug.keystore.base64..."
+            base64 -d debug.keystore.base64 > debug.keystore
+          elif [ ! -f "debug.keystore" ]; then
+            echo "Generating standard debug keystore..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          
+          # Ensure .env file exists for Secrets Gradle Plugin
+          if [ ! -f ".env" ]; then
+            if [ -f ".env.example" ]; then
+              cp .env.example .env
+            else
+              touch .env
+            fi
+            echo "Created .env from placeholder"
+          fi
+
+      - name: Grant Execute Permission for Gradle Wrapper
+        run: chmod +x gradlew
+
+      - name: Verify Gradle & AndroidManifest Integrity
+        run: |
+          echo "=== Verifying project structure ==="
+          test -f "settings.gradle.kts" || { echo "ERROR: settings.gradle.kts is missing"; exit 1; }
+          test -f "build.gradle.kts" || { echo "ERROR: root build.gradle.kts is missing"; exit 1; }
+          test -f "app/build.gradle.kts" || { echo "ERROR: app/build.gradle.kts is missing"; exit 1; }
+          test -f "app/src/main/AndroidManifest.xml" || { echo "ERROR: AndroidManifest.xml is missing"; exit 1; }
+          test -f "gradle/wrapper/gradle-wrapper.jar" || { echo "ERROR: gradle-wrapper.jar is missing"; exit 1; }
+          test -f "gradle/wrapper/gradle-wrapper.properties" || { echo "ERROR: gradle-wrapper.properties is missing"; exit 1; }
+          echo "All required files verified successfully."
+
+      - name: Build Debug APK with Gradle
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Verify and Package APK
+        run: |
+          echo "=== Verifying Output APK ==="
+          APK_SOURCE="app/build/outputs/apk/debug/app-debug.apk"
+          if [ ! -f "$APK_SOURCE" ]; then
+            echo "ERROR: Output APK not found at $APK_SOURCE"
+            echo "Searching for any generated .apk files in app/build/outputs/:"
+            find app/build/outputs -type f -name "*.apk"
+            exit 1
+          fi
+          
+          mkdir -p build-artifacts
+          cp "$APK_SOURCE" build-artifacts/LocalVideo-AI-debug.apk
+          
+          echo "APK generated successfully:"
+          ls -lh build-artifacts/LocalVideo-AI-debug.apk
+
+      - name: Upload Debug APK to GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: LocalVideo-AI-debug
+          path: build-artifacts/LocalVideo-AI-debug.apk
+          if-no-files-found: error
+          retention-days: 14
